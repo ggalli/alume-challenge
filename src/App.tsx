@@ -6,8 +6,13 @@ import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Button from '@mui/material/Button';
 import { DateTime } from "luxon";
+import { useFormik } from 'formik';
+import InputMask from "react-input-mask";
 
 import { api } from './services/api';
+import launchFormValidation from './validations/launch-form';
+import { Backdrop, CircularProgress, Dialog, DialogActions, DialogTitle, FormHelperText, InputAdornment } from '@mui/material';
+import axios from 'axios';
 
 type launchProps = {
   window_start: string;
@@ -27,6 +32,16 @@ type NewLaunchProps = {
   id: number;
 }
 
+type FormProps = {
+  accept_terms?: boolean;
+  fullname: string;
+  health_problems: string;
+  identification: string;
+  mission_id: number;
+  weight: number;
+}
+
+
 function getNextSixMonthsLaunchs(launchs: launchProps[]) {
   const currentDate = DateTime.now();
 
@@ -34,7 +49,7 @@ function getNextSixMonthsLaunchs(launchs: launchProps[]) {
 
   const nextSixMonthsLaunchs = launchs.filter(launch => {
     let windowStart = DateTime.fromISO(launch.window_start);
-    
+
     // return only next six months launchs and launchs with mission
     return windowStart <= nextSixMonthsDate && launch.mission;
   });
@@ -57,9 +72,24 @@ function formatLaunch(launch: launchProps) {
 
 function App() {
   const [launchs, setLaunchs] = useState<NewLaunchProps[]>([]);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  async function handleFormSubmit(values: FormProps) {
+    setIsLoading(true);
+    delete values.accept_terms;
+  
+    const response = await axios.post('https://alume-teste.free.beeceptor.com/buy-ticket', values);
+  
+    if (response.status === 201) {
+      setIsLoading(false);
+      setIsDialogOpen(true);
+    }
+  }
 
   useEffect(() => {
     async function getUpcomingLaunchs() {
+      setIsLoading(true);
       const response = await api.get('/launch/upcoming');
       const launchs = response.data.results;
       
@@ -69,47 +99,151 @@ function App() {
       const formatedLaunches = nextSixMonthsLaunchs.map(launch => formatLaunch(launch));
 
       setLaunchs(formatedLaunches);
+      setIsLoading(false);
     }
 
     getUpcomingLaunchs();
-  }, [])
+  }, []);
+
+  const formik = useFormik({
+    initialValues: {
+      mission_id: 0,
+      fullname: '',
+      identification: '',
+      weight: 0,
+      health_problems: '',
+      accept_terms: false
+    },
+    validationSchema: launchFormValidation,
+    onSubmit: (values) => {handleFormSubmit(values)},
+  });
 
   return (
     <div className='wrapper'>
-      <Grid container spacing={4} columns={{ xs: 4, sm: 8, md: 12 }}>
+      <form onSubmit={formik.handleSubmit}>
+        <Grid container spacing={4} columns={{ xs: 4, sm: 8, md: 12 }}>
+          <Grid item xs={4} sm={6} md={12}>
+            <Autocomplete
+              options={launchs}
+              onChange={(event, value) => {
+                formik.setFieldValue("mission_id", value?.id);
+              }}
+              renderInput={(params) => (
+                <TextField {...params} 
+                  label="Selecionar vôo" 
+                  name='mission_id'
+                  value={formik.values.mission_id}
+                  onChange={formik.handleChange}
+                  error={formik.touched.mission_id && Boolean(formik.errors.mission_id)}
+                  helperText={formik.touched.mission_id && formik.errors.mission_id}
+                />
+              )}
+            />
+          </Grid>
+          <Grid item xs={4} sm={6} md={12}>
+            <TextField 
+              fullWidth 
+              name='fullname' 
+              label='Nome completo'
+              value={formik.values.fullname}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              error={formik.touched.fullname && Boolean(formik.errors.fullname)}
+              helperText={formik.touched.fullname && formik.errors.fullname}
+            />
+          </Grid>
 
-        <Grid item xs={4} sm={6} md={12}>
-          <Autocomplete 
-            options={launchs}
-            renderInput={(params) => <TextField {...params} label="Movie" />}
-          />
+          <Grid item xs={4} sm={6} md={12}>
+            <InputMask
+              mask="999.999.999-99"
+              maskPlaceholder={null}
+              value={formik.values.identification}
+              disabled={false}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+            >
+              <TextField
+                fullWidth 
+                name='identification' 
+                label='CPF'
+                error={formik.touched.identification && Boolean(formik.errors.identification)}
+                helperText={formik.touched.identification && formik.errors.identification}
+              />
+            </InputMask>
+            
+          </Grid>
+
+          <Grid item xs={4} sm={6} md={12}>
+            <TextField 
+              fullWidth 
+              type='number' 
+              name='weight' 
+              label='Peso' 
+              InputProps={{
+                endAdornment: <InputAdornment position="end">gramas</InputAdornment>,
+              }}
+              value={formik.values.weight}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              error={formik.touched.weight && Boolean(formik.errors.weight)}
+              helperText={formik.touched.weight && formik.errors.weight}
+            />
+          </Grid>
+
+          <Grid item xs={4} sm={6} md={12}>
+            <TextField 
+              fullWidth 
+              multiline 
+              type='number' 
+              name='health_problems' 
+              label='Problemas de saúde' 
+              value={formik.values.health_problems}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              error={formik.touched.health_problems && Boolean(formik.errors.health_problems)}
+              helperText={formik.touched.health_problems && formik.errors.health_problems}
+            />
+          </Grid>
+
+          <Grid item xs={4} sm={6} md={12}>
+            <FormControlLabel 
+              control={
+                <Checkbox 
+                  name='accept_terms' 
+                  // checked={formik.values.accept_terms} 
+                  onChange={formik.handleChange}  
+                />
+              } 
+              label="Garanto que os dados indicados aqui são verdadeiros e que a inclusão ou omissão de dados podem causar o cancelamento da passagem."
+            />
+            <FormHelperText error={Boolean(formik.errors.accept_terms)}>
+              {Boolean(formik.errors.accept_terms) ? formik.errors.accept_terms : ''}
+            </FormHelperText>
+          </Grid>
+
+          <Grid item xs={4} sm={6} md={12}>
+            <Button variant="contained" type='submit'>Finalizar compra</Button>
+          </Grid>
         </Grid>
+      </form>
+      
+      <Dialog
+        open={isDialogOpen}
+      >
+        <DialogTitle>
+          Compra efetuada com sucesso
+        </DialogTitle>
+        <DialogActions>
+          <Button onClick={() => setIsDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
-        <Grid item xs={4} sm={6} md={12}>
-          <TextField label='Nome completo' name='fullname' fullWidth />
-        </Grid>
-
-        <Grid item xs={4} sm={6} md={12}>
-          <TextField type='number' label='CPF' name='identification' fullWidth />
-        </Grid>
-
-        <Grid item xs={4} sm={6} md={12}>
-          <TextField type='number' label='Peso' name='weight' fullWidth />
-        </Grid>
-
-        <Grid item xs={4} sm={6} md={12}>
-          <TextField type='number' label='Problemas de saúde' name='health_problems' multiline fullWidth />
-        </Grid>
-
-        <Grid item xs={4} sm={6} md={12}>
-          <FormControlLabel control={<Checkbox />} label="Garanto que os dados indicados aqui são verdadeiros e que a inclusão ou omissão de dados podem causar o cancelamento da passagem." />
-        </Grid>
-
-        <Grid item xs={4} sm={6} md={12}>
-          <Button variant="contained">Finalizar compra</Button>
-        </Grid>
-
-      </Grid>
+      <Backdrop
+        sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}
+        open={isLoading}
+      >
+        <CircularProgress color="inherit" />
+      </Backdrop>
     </div>
   );
 }
